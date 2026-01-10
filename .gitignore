@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Output
+slices/
+*.wav
+
+# macOS
+.DS_Store
