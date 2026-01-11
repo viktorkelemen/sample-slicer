@@ -32,6 +32,17 @@ s.waitForBoot({
         str;
     };
 
+    // Generate sample sequence for a channel
+    var generateSequence = { arg ch;
+        var numSamples = ~channels[ch].groupBufs[~channels[ch].currentGroup].size;
+        var numHits = ~channels[ch].hits;
+        if(numSamples > 0, {
+            ~channels[ch].sampleSeq = Array.fill(numHits, { numSamples.rand });
+        }, {
+            ~channels[ch].sampleSeq = Array.new;
+        });
+    };
+
     // Load samples for a given set
     var loadSampleSet = { arg ch, setName;
         var basePath = slicesDir +/+ setName;
@@ -50,6 +61,7 @@ s.waitForBoot({
             files.collect({ arg f; f.basename });
         });
         s.sync;
+        generateSequence.value(ch);
         ("Ch " ++ ch ++ " loaded: " ++ setName).postln;
     };
 
@@ -74,7 +86,8 @@ s.waitForBoot({
             running: false,
             hits: 3,
             steps: 8,
-            stepDur: 0.25
+            stepDur: 0.25,
+            sampleSeq: Array.new
         )
     });
 
@@ -134,6 +147,7 @@ s.waitForBoot({
                     ~channels[ch].currentGroup = i;
                     ~channels[ch].groupBtns.do({ arg b; b.value = 0 });
                     btn.value = 1;
+                    generateSequence.value(ch);
                 });
         });
         ~channels[ch].groupBtns[0].value = 1;
@@ -174,15 +188,23 @@ s.waitForBoot({
             .action_({ arg box; ~channels[ch].stepDur = box.value });
 
         // Pattern display
-        ~channels[ch].patternLabel = StaticText(~win, Rect(20 + xOffset, 125, 280, 20))
+        ~channels[ch].patternLabel = StaticText(~win, Rect(20 + xOffset, 125, 220, 20))
             .string_(patternString.value(euclidean.value(~channels[ch].hits, ~channels[ch].steps)))
             .stringColor_(Color.yellow)
             .font_(Font("Monaco", 12));
+
+        // Shuffle button
+        Button(~win, Rect(245 + xOffset, 123, 50, 24))
+            .states_([["SHUF", Color.white, Color.gray(0.5)]])
+            .action_({
+                generateSequence.value(ch);
+            });
 
         // Update pattern
         ~channels[ch].updatePattern = {
             var pat = euclidean.value(~channels[ch].hits, ~channels[ch].steps);
             { ~channels[ch].patternLabel.string = patternString.value(pat) }.defer;
+            generateSequence.value(ch);
         };
 
         ~channels[ch].hitsBox.action = { arg box;
@@ -209,15 +231,18 @@ s.waitForBoot({
                     fork {
                         while({ ~channels[ch].running }, {
                             var pattern = euclidean.value(~channels[ch].hits, ~channels[ch].steps);
+                            var hitIdx = 0;
                             pattern.do({ arg hit;
                                 if(~channels[ch].running, {
                                     if(hit == 1, {
                                         var bufs = ~channels[ch].groupBufs[~channels[ch].currentGroup];
                                         var names = ~channels[ch].groupNames[~channels[ch].currentGroup];
-                                        var i = bufs.size.rand;
+                                        var seq = ~channels[ch].sampleSeq;
+                                        var i = seq[hitIdx % seq.size];
                                         try { ~channels[ch].activeSynth.set(\gate, 0) };
                                         ~channels[ch].activeSynth = Synth(\sampler, [\buf, bufs[i], \amp, 0.5]);
                                         { ~channels[ch].label.string = names[i] }.defer;
+                                        hitIdx = hitIdx + 1;
                                     });
                                     ~channels[ch].stepDur.wait;
                                 });
@@ -252,15 +277,18 @@ s.waitForBoot({
                     fork {
                         while({ ~channels[ch].running }, {
                             var pattern = euclidean.value(~channels[ch].hits, ~channels[ch].steps);
+                            var hitIdx = 0;
                             pattern.do({ arg hit;
                                 if(~channels[ch].running, {
                                     if(hit == 1, {
                                         var bufs = ~channels[ch].groupBufs[~channels[ch].currentGroup];
                                         var names = ~channels[ch].groupNames[~channels[ch].currentGroup];
-                                        var i = bufs.size.rand;
+                                        var seq = ~channels[ch].sampleSeq;
+                                        var i = seq[hitIdx % seq.size];
                                         try { ~channels[ch].activeSynth.set(\gate, 0) };
                                         ~channels[ch].activeSynth = Synth(\sampler, [\buf, bufs[i], \amp, 0.5]);
                                         { ~channels[ch].label.string = names[i] }.defer;
+                                        hitIdx = hitIdx + 1;
                                     });
                                     ~channels[ch].stepDur.wait;
                                 });
