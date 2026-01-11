@@ -64,8 +64,8 @@ def find_cut_points(onset_times: np.ndarray, duration: float,
 
 def slice_at_gaps(audio: np.ndarray, sr: int, onset_times: np.ndarray,
                   min_dur: float = 1.0, max_dur: float = 10.0,
-                  min_gap: float = 0.3) -> list[dict]:
-    """Slice audio at significant gaps, filter by duration."""
+                  min_gap: float = 0.3, min_rms: float = 0.01) -> list[dict]:
+    """Slice audio at significant gaps, filter by duration and RMS."""
     duration = audio.shape[1] / sr
 
     # Find cut points at gaps
@@ -82,13 +82,17 @@ def slice_at_gaps(audio: np.ndarray, sr: int, onset_times: np.ndarray,
         while seg_dur > max_dur:
             # Take a max_dur chunk
             chunk_end = start + max_dur
-            segments.append(_extract_segment(audio, sr, start, chunk_end))
+            seg = _extract_segment(audio, sr, start, chunk_end)
+            if seg["rms"] >= min_rms:
+                segments.append(seg)
             start = chunk_end
             seg_dur = end - start
 
         # Keep remaining if >= min_dur
         if seg_dur >= min_dur:
-            segments.append(_extract_segment(audio, sr, start, end))
+            seg = _extract_segment(audio, sr, start, end)
+            if seg["rms"] >= min_rms:
+                segments.append(seg)
 
     return segments
 
