@@ -1,6 +1,12 @@
 (
-// Free old buffers first
-Buffer.freeAll;
+// Increase buffer limit
+s.options.numBuffers = 1024 * 16;
+
+// Reboot server if running with old settings
+if(s.serverRunning, {
+    "Rebooting server with increased buffer limit...".postln;
+    s.reboot;
+});
 
 s.waitForBoot({
     var slicesDir = "/Users/vkelemen/workspace/sample-slicer/slices";
@@ -34,21 +40,60 @@ s.waitForBoot({
 
     // Generate sample sequence for a channel
     var generateSequence = { arg ch;
-        var numSamples = ~channels[ch].groupBufs[~channels[ch].currentGroup].size;
+        var bufs = ~channels[ch].groupBufs[~channels[ch].currentGroup];
+        var numSamples = if(bufs.notNil, { bufs.size }, { 0 });
         var numHits = ~channels[ch].hits;
-        if(numSamples > 0, {
-            ~channels[ch].sampleSeq = Array.fill(numHits, { numSamples.rand });
+        ~channels[ch].sampleSeq = if(numSamples > 0, {
+            Array.fill(numHits, { numSamples.rand });
         }, {
-            ~channels[ch].sampleSeq = Array.new;
+            Array.new;
+        });
+    };
+
+    // Play loop for a channel (extracted to avoid duplication)
+    var startPlayLoop = { arg ch;
+        if(~channels[ch].running.not, {
+            ~channels[ch].running = true;
+            fork {
+                while({ ~channels[ch].running }, {
+                    var pattern = euclidean.value(~channels[ch].hits, ~channels[ch].steps);
+                    var hitIdx = 0;
+                    pattern.do({ arg hit;
+                        if(~channels[ch].running, {
+                            if(hit == 1, {
+                                var bufs = ~channels[ch].groupBufs[~channels[ch].currentGroup];
+                                var names = ~channels[ch].groupNames[~channels[ch].currentGroup];
+                                var seq = ~channels[ch].sampleSeq;
+                                if(seq.size > 0 and: { bufs.size > 0 }, {
+                                    var i = seq[hitIdx % seq.size] % bufs.size;
+                                    try { ~channels[ch].activeSynth.set(\gate, 0) };
+                                    ~channels[ch].activeSynth = Synth(\sampler, [\buf, bufs[i], \amp, 0.5]);
+                                    { ~channels[ch].label.string = names[i] }.defer;
+                                });
+                                hitIdx = hitIdx + 1;
+                            });
+                            ~channels[ch].stepDur.wait;
+                        });
+                    });
+                });
+            };
         });
     };
 
     // Load samples for a given set
     var loadSampleSet = { arg ch, setName;
         var basePath = slicesDir +/+ setName;
+        var oldBufs = ~channels[ch].groupBufs;
+
+        // Stop playback and free synth
+        ~channels[ch].running = false;
+        try { ~channels[ch].activeSynth.set(\gate, 0) };
+        try { { ~channels[ch].label.string = "--" }.defer };
+
         // Free old buffers
-        ~channels[ch].groupBufs.do({ arg bufs; bufs.do({ arg b; b.free }) });
+        oldBufs.do({ arg bufs; bufs.do({ arg b; b.free }) });
         s.sync;
+
         // Load new buffers
         ~channels[ch].groupBufs = numGroups.collect({ arg i;
             var path = basePath +/+ "group_" ++ i;
@@ -61,6 +106,7 @@ s.waitForBoot({
             files.collect({ arg f; f.basename });
         });
         s.sync;
+
         generateSequence.value(ch);
         ("Ch " ++ ch ++ " loaded: " ++ setName).postln;
     };
@@ -225,32 +271,7 @@ s.waitForBoot({
         // Play button
         Button(~win, Rect(20 + xOffset, 190, 130, 35))
             .states_([["PLAY", Color.white, Color.green(0.6)]])
-            .action_({
-                if(~channels[ch].running.not, {
-                    ~channels[ch].running = true;
-                    fork {
-                        while({ ~channels[ch].running }, {
-                            var pattern = euclidean.value(~channels[ch].hits, ~channels[ch].steps);
-                            var hitIdx = 0;
-                            pattern.do({ arg hit;
-                                if(~channels[ch].running, {
-                                    if(hit == 1, {
-                                        var bufs = ~channels[ch].groupBufs[~channels[ch].currentGroup];
-                                        var names = ~channels[ch].groupNames[~channels[ch].currentGroup];
-                                        var seq = ~channels[ch].sampleSeq;
-                                        var i = seq[hitIdx % seq.size];
-                                        try { ~channels[ch].activeSynth.set(\gate, 0) };
-                                        ~channels[ch].activeSynth = Synth(\sampler, [\buf, bufs[i], \amp, 0.5]);
-                                        { ~channels[ch].label.string = names[i] }.defer;
-                                        hitIdx = hitIdx + 1;
-                                    });
-                                    ~channels[ch].stepDur.wait;
-                                });
-                            });
-                        });
-                    };
-                });
-            });
+            .action_({ startPlayLoop.value(ch) });
 
         // Stop button
         Button(~win, Rect(160 + xOffset, 190, 130, 35))
@@ -271,32 +292,7 @@ s.waitForBoot({
     Button(~win, Rect(100, 248, 120, 30))
         .states_([["PLAY ALL", Color.white, Color.green(0.7)]])
         .action_({
-            numChannels.do({ arg ch;
-                if(~channels[ch].running.not, {
-                    ~channels[ch].running = true;
-                    fork {
-                        while({ ~channels[ch].running }, {
-                            var pattern = euclidean.value(~channels[ch].hits, ~channels[ch].steps);
-                            var hitIdx = 0;
-                            pattern.do({ arg hit;
-                                if(~channels[ch].running, {
-                                    if(hit == 1, {
-                                        var bufs = ~channels[ch].groupBufs[~channels[ch].currentGroup];
-                                        var names = ~channels[ch].groupNames[~channels[ch].currentGroup];
-                                        var seq = ~channels[ch].sampleSeq;
-                                        var i = seq[hitIdx % seq.size];
-                                        try { ~channels[ch].activeSynth.set(\gate, 0) };
-                                        ~channels[ch].activeSynth = Synth(\sampler, [\buf, bufs[i], \amp, 0.5]);
-                                        { ~channels[ch].label.string = names[i] }.defer;
-                                        hitIdx = hitIdx + 1;
-                                    });
-                                    ~channels[ch].stepDur.wait;
-                                });
-                            });
-                        });
-                    };
-                });
-            });
+            numChannels.do({ arg ch; startPlayLoop.value(ch) });
         });
 
     Button(~win, Rect(230, 248, 120, 30))
