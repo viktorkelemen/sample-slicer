@@ -72,7 +72,7 @@ s.waitForBoot({
                                 });
                                 hitIdx = hitIdx + 1;
                             });
-                            ~channels[ch].stepDur.wait;
+                            (15 / ~tempo).wait;  // 16th note duration
                         });
                     });
                 });
@@ -122,6 +122,9 @@ s.waitForBoot({
 
     s.sync;
 
+    // Global tempo (BPM) - each step is a 16th note
+    ~tempo = 120;
+
     // Initialize channels
     ~channels = numChannels.collect({
         (
@@ -132,7 +135,6 @@ s.waitForBoot({
             running: false,
             hits: 3,
             steps: 8,
-            stepDur: 0.25,
             sampleSeq: Array.new
         )
     });
@@ -221,18 +223,6 @@ s.waitForBoot({
             .clipLo_(1)
             .clipHi_(16);
 
-        StaticText(~win, Rect(210 + xOffset, 95, 35, 20))
-            .string_("Dur:")
-            .stringColor_(Color.white)
-            .font_(Font("Monaco", 11));
-
-        ~channels[ch].durBox = NumberBox(~win, Rect(250 + xOffset, 95, 45, 20))
-            .value_(~channels[ch].stepDur)
-            .decimals_(2)
-            .clipLo_(0.05)
-            .clipHi_(2.0)
-            .action_({ arg box; ~channels[ch].stepDur = box.value });
-
         // Pattern display
         ~channels[ch].patternLabel = StaticText(~win, Rect(20 + xOffset, 125, 220, 20))
             .string_(patternString.value(euclidean.value(~channels[ch].hits, ~channels[ch].steps)))
@@ -284,18 +274,30 @@ s.waitForBoot({
     });
 
     // Master controls
-    StaticText(~win, Rect(20, 250, 100, 20))
+    StaticText(~win, Rect(20, 250, 60, 20))
         .string_("Master:")
         .stringColor_(Color.white)
         .font_(Font("Monaco", 12, true));
 
-    Button(~win, Rect(100, 248, 120, 30))
+    StaticText(~win, Rect(85, 250, 35, 20))
+        .string_("BPM:")
+        .stringColor_(Color.white)
+        .font_(Font("Monaco", 11));
+
+    NumberBox(~win, Rect(125, 248, 50, 24))
+        .value_(~tempo)
+        .decimals_(0)
+        .clipLo_(30)
+        .clipHi_(300)
+        .action_({ arg box; ~tempo = box.value });
+
+    Button(~win, Rect(190, 248, 100, 30))
         .states_([["PLAY ALL", Color.white, Color.green(0.7)]])
         .action_({
             numChannels.do({ arg ch; startPlayLoop.value(ch) });
         });
 
-    Button(~win, Rect(230, 248, 120, 30))
+    Button(~win, Rect(300, 248, 100, 30))
         .states_([["STOP ALL", Color.white, Color.red(0.7)]])
         .action_({
             numChannels.do({ arg ch;
